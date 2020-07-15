@@ -147,6 +147,7 @@ contract Prestaking is Ownable {
     function startWithdrawStake() external onlyStaker {
         Staker storage staker = stakersMap[msg.sender];
         require(staker.endTime == 0);
+        require(staker.cooldownTime == 0);
         
         // We distribute the rewards first, so that the withdrawing staker
         // receives all of their allocated rewards, before setting an `endTime`.
