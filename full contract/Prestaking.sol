@@ -561,10 +561,11 @@ contract Prestaking is Ownable {
         _;
     }
     
-    constructor(IERC20 token, uint256 min, uint256 max) public {
+    constructor(IERC20 token, uint256 min, uint256 max, uint256 reward) public {
         _token = token;
         minimumStake = min;
         maximumStake = max;
+        dailyReward = reward;
         lastUpdated = block.timestamp;
     }
     
@@ -600,6 +601,16 @@ contract Prestaking is Ownable {
      */
     function updateMaximumStake(uint256 amount) external onlyOwner {
         maximumStake = amount;
+    }
+
+    /**
+     * @notice Update the daily reward amount.
+     * Can only be called by the contract owner.
+     * 
+     * @param amount The amount to set the daily reward to.
+     */
+    function updateDailyReward(uint256 amount) external onlyOwner {
+        dailyReward = amount;
     }
     
     /**
