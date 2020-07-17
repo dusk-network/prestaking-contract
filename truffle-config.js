@@ -1,9 +1,3 @@
-const LedgerProvider = require("truffle-ledger-provider");
-var ledgerOptions = {
-  networkId: 1, // mainnet
-  accountsOffset: 0 // we use the first address
-};
-
 module.exports = {
   networks: {
     development: {
