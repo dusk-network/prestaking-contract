@@ -130,6 +130,7 @@ contract Prestaking is Ownable {
         
         staker.cooldownTime = block.timestamp;
         staker.pendingReward = staker.accumulatedReward;
+        staker.accumulatedReward = 0;
     }
     
     /**
@@ -201,7 +202,9 @@ contract Prestaking is Ownable {
                 Staker storage staker = stakersMap[allStakers[i]];
                 
                 // Stakers can only start receiving rewards after 1 day of lockup.
-                if (lastUpdated - staker.startTime < 1 days) {
+                // We check for at least two days here though, otherwise, a staker
+                // will still immediately get a reward after 1 day of waiting.
+                if (lastUpdated - staker.startTime < 2 days) {
                     continue;
                 }
                 
@@ -217,7 +220,8 @@ contract Prestaking is Ownable {
                 }
                 
                 // Calculate percentage of reward to be received, and allocate it.
-                uint256 reward = staker.amount.div(stakingPool).mul(dailyReward);
+                // Reward is calculated down to a precision of two decimals.
+                uint256 reward = staker.amount.mul(10000).div(stakingPool).mul(dailyReward).div(10000);
                 staker.accumulatedReward += reward;
             }
         }
