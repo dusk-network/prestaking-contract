@@ -590,6 +590,7 @@ contract Prestaking is Ownable {
      * @param amount The amount to set the minimum stake to.
      */
     function updateMinimumStake(uint256 amount) external onlyOwner {
+        require(amount <= maximumStake, "Given amount exceeds current maximum stake");
         minimumStake = amount;
     }
     
@@ -600,6 +601,7 @@ contract Prestaking is Ownable {
      * @param amount The amount to set the maximum stake to.
      */
     function updateMaximumStake(uint256 amount) external onlyOwner {
+        require(amount >= minimumStake, "Given amount is less than current minimum stake");
         maximumStake = amount;
     }
 
