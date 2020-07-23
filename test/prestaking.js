@@ -79,7 +79,7 @@ contract('Prestaking', async (accounts) => {
 			await prestakingInstance.stake({ from: accounts[1], gas: '1000000' });
 
 			// Check that the new information is correct.
-			let currentTime = Math.floor(Date.now()/1000);
+			let currentTime = Math.floor(Date.now()/1000) + 5;
 			let staker = await prestakingInstance.stakersMap.call(accounts[1], { from: accounts[1] });
 			assert.isAtMost(staker.startTime.toNumber(), currentTime);
 			assert.strictEqual(staker.amount.toString(), "250000");
@@ -197,7 +197,12 @@ contract('Prestaking', async (accounts) => {
 		it('should allow a staker to start their withdrawal cooldown, after waiting for the initial period', async () => {
 			await prestakingInstance.startWithdrawReward({ from: accounts[1], gas: '1000000' });
 
-			// TODO: check for appropriate stats
+			// Staker has been staking for 7 days, meaning that he should be getting:
+			// 7 * (200 * 0.5) = 700
+			let staker = await prestakingInstance.stakersMap.call(accounts[1], { from: accounts[1] });
+			assert.strictEqual(staker.pendingReward.toString(), "700");
+			assert.strictEqual(staker.accumulatedReward.toString(), "0");
+			assert.notEqual(staker.cooldownTime.toNumber(), 0);
 		});
 
 		it('should not allow the staker to withdraw their reward before the cooldown has ended', async () => {
@@ -228,7 +233,11 @@ contract('Prestaking', async (accounts) => {
 		it('should allow a staker to collect their reward after waiting for the cooldown to end', async () => {
 			await prestakingInstance.withdrawReward({ from: accounts[1], gas: '1000000' });
 
-			// TODO: check appropriate stats, and staker balance.
+			let staker = await prestakingInstance.stakersMap.call(accounts[1], { from: accounts[1] });
+			assert.strictEqual(staker.pendingReward.toString(), "0");
+			assert.strictEqual(staker.cooldownTime.toString(), "0");
+			let balance = await tokenInstance.balanceOf.call(accounts[1], { from: accounts[1] });
+			assert.strictEqual(balance.toString(), "700")
 		});
 	});
 
@@ -241,7 +250,10 @@ contract('Prestaking', async (accounts) => {
 		it('should allow a staker to start the stake withdrawal cooldown after 30 days', async () => {
 			await prestakingInstance.startWithdrawStake({ from: accounts[1], gas: '1000000' });
 
-			// TODO: check appropriate stats, and staker balance.
+			// Staker should have accumulated another 23 days of rewards.
+			// 23 * (200 * 0.5) = 2300
+			let staker = await prestakingInstance.stakersMap.call(accounts[1], { from: accounts[1] });
+			assert.strictEqual(staker.accumulatedReward.toString(), "2300");
 		});
 
 		it('should not allow the staker to withdraw his stake before the cooldown ends', async () => {
@@ -281,7 +293,11 @@ contract('Prestaking', async (accounts) => {
 		it('should allow a staker to withdraw his stake after the cooldown', async () => {
 			await prestakingInstance.withdrawStake({ from: accounts[1], gas: '1000000' });
 
-			// TODO: check appropriate stats, and staker balance.
+			// Check that the staker got his money
+			// He should have gotten his initial stake, the first reward withdrawal, and the remaining reward
+			// credited to his account, which is 700 + 250000 + 2300 = 253000
+			let balance = await tokenInstance.balanceOf.call(accounts[1], { from: accounts[1] });
+			assert.strictEqual(balance.toString(), "253000")
 		});
 
 		it('should delete the staker from the storage after his stake is withdrawn', async () => {
