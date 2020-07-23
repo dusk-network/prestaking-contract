@@ -26,7 +26,7 @@ contract Prestaking is Ownable {
         uint256 amount;
         uint256 accumulatedReward;
         uint    cooldownTime;
-        bool active;
+        bool    active;
         uint256 pendingReward;
     }
     
