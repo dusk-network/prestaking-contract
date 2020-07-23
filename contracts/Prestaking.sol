@@ -25,8 +25,8 @@ contract Prestaking is Ownable {
         uint    endTime;
         uint256 amount;
         uint256 accumulatedReward;
-        bool    active;
         uint    cooldownTime;
+        bool active;
         uint256 pendingReward;
     }
     
@@ -41,7 +41,7 @@ contract Prestaking is Ownable {
     
     modifier onlyStaker() {
         Staker storage staker = stakersMap[msg.sender];
-        require(staker.active);
+        require(staker.startTime + 1 days <= block.timestamp && staker.startTime != 0, "No stake is active for sender address");
         _;
     }
     
@@ -131,7 +131,6 @@ contract Prestaking is Ownable {
      */
     function startWithdrawReward() external onlyStaker {
         Staker storage staker = stakersMap[msg.sender];
-        require(staker.startTime + 1 days <= block.timestamp, "Please wait at least one day after staking to withdraw rewards");
         require(staker.cooldownTime == 0, "A withdrawal call has already been triggered");
         require(staker.endTime == 0, "Stake already withdrawn");
         distributeRewards();
@@ -145,7 +144,7 @@ contract Prestaking is Ownable {
      */
     function withdrawReward() external onlyStaker {
         Staker storage staker = stakersMap[msg.sender];
-        require(staker.cooldownTime != 0, "A withdrawal call has already been triggered");
+        require(staker.cooldownTime != 0, "The withdrawal cooldown has not been triggered");
         distributeRewards();
 
         if (block.timestamp - staker.cooldownTime >= 7 days) {
