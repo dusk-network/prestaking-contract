@@ -41,7 +41,7 @@ contract Prestaking is Ownable {
     
     modifier onlyStaker() {
         Staker storage staker = stakersMap[msg.sender];
-        require(staker.startTime + 1 days <= block.timestamp && staker.startTime != 0, "No stake is active for sender address");
+        require(staker.startTime.add(1 days) <= block.timestamp && staker.startTime != 0, "No stake is active for sender address");
         _;
     }
     
@@ -141,7 +141,7 @@ contract Prestaking is Ownable {
         require(staker.cooldownTime != 0, "The withdrawal cooldown has not been triggered");
         distributeRewards();
 
-        if (block.timestamp - staker.cooldownTime >= 7 days) {
+        if (block.timestamp.sub(staker.cooldownTime) >= 7 days) {
             uint256 reward = staker.pendingReward;
             staker.cooldownTime = 0;
             staker.pendingReward = 0;
@@ -154,7 +154,7 @@ contract Prestaking is Ownable {
      */
     function startWithdrawStake() external onlyStaker {
         Staker storage staker = stakersMap[msg.sender];
-        require(staker.startTime + 30 days <= block.timestamp, "Stakes can only be withdrawn 30 days after initial lock up");
+        require(staker.startTime.add(30 days) <= block.timestamp, "Stakes can only be withdrawn 30 days after initial lock up");
         require(staker.endTime == 0, "Stake already withdrawn");
         require(staker.cooldownTime == 0, "A withdrawal call has been triggered - please wait for it to complete before withdrawing your stake");
         
@@ -162,7 +162,7 @@ contract Prestaking is Ownable {
         // receives all of their allocated rewards, before setting an `endTime`.
         distributeRewards();
         staker.endTime = block.timestamp;
-        stakingPool -= staker.amount;
+        stakingPool = stakingPool.sub(staker.amount);
     }
     
     /**
@@ -194,35 +194,42 @@ contract Prestaking is Ownable {
      * @dev This function can update the staker's active status, and the staking pool size.
      */
     function distributeRewards() internal {
-        while ((block.timestamp - lastUpdated) > 1 days) {
-            lastUpdated += 1 days;
+        while ((block.timestamp.sub(lastUpdated)) > 1 days) {
+            lastUpdated = lastUpdated.add(1 days);
+
+            // Update the staking pool for this day
+            updateStakingPool();
             
             // Allocate rewards for this day.
             for (uint i = 0; i < allStakers.length; i++) {
                 Staker storage staker = stakersMap[allStakers[i]];
                 
                 // Stakers can only start receiving rewards after 1 day of lockup.
-                // We check for at least two days here though, otherwise, a staker
-                // will still immediately get a reward after 1 day of waiting.
-                if (lastUpdated - staker.startTime < 2 days) {
-                    continue;
-                }
-                
                 // If the staker has called to withdraw their stake, don't allocate any more rewards to them.
-                if (staker.endTime != 0) {
+                if (!staker.active || staker.endTime != 0) {
                     continue;
-                }
-                
-                // If this staker has just become active, update the staking pool size.
-                if (!staker.active) {
-                    staker.active = true;
-                    stakingPool += staker.amount;
                 }
                 
                 // Calculate percentage of reward to be received, and allocate it.
                 // Reward is calculated down to a precision of two decimals.
                 uint256 reward = staker.amount.mul(10000).div(stakingPool).mul(dailyReward).div(10000);
-                staker.accumulatedReward += reward;
+                staker.accumulatedReward = staker.accumulatedReward.add(reward);
+            }
+        }
+    }
+
+    /**
+     * @notice Update the staking pool, if any new entrants are found which have passed
+     * the initial waiting period.
+     */
+    function updateStakingPool() internal {
+        for (uint i = 0; i < allStakers.length; i++) {
+            Staker storage staker = stakersMap[allStakers[i]];
+
+            // If this staker has just become active, update the staking pool size.
+            if (!staker.active && lastUpdated.sub(staker.startTime) >= 1 days) {
+                staker.active = true;
+                stakingPool = stakingPool.add(staker.amount);
             }
         }
     }
