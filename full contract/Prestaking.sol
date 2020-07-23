@@ -622,8 +622,6 @@ contract Prestaking is Ownable {
     function stake() external {
         // Ensure this staker does not exist yet.
         Staker storage staker = stakersMap[msg.sender];
-        require(staker.startTime == 0, "Address already known");
-        require(staker.endTime == 0, "Address already known");
         require(staker.amount == 0, "Address already known");
         
         // Check that the staker has approved the appropriate amount of DUSK to this contract.
