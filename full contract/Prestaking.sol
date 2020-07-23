@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.6.11;
+pragma solidity 0.6.12;
 
 /**
  * @dev Collection of functions related to the address type
@@ -620,15 +620,18 @@ contract Prestaking is Ownable {
     function stake() external {
         // Ensure this staker does not exist yet.
         Staker storage staker = stakersMap[msg.sender];
-        require(staker.startTime == 0);
-        require(staker.endTime == 0);
-        require(staker.amount == 0);
+        require(staker.startTime == 0, "Address already known");
+        require(staker.endTime == 0, "Address already known");
+        require(staker.amount == 0, "Address already known");
         
         // Check that the staker has approved the appropriate amount of DUSK to this contract.
         uint256 balance = _token.allowance(msg.sender, address(this));
-        require(balance != 0);
-        require(balance >= minimumStake);
-        require(balance <= maximumStake);
+        require(balance != 0, "No tokens have been approved for this contract");
+        require(balance >= minimumStake, "Insufficient tokens approved for this contract");
+
+        if (balance > maximumStake) {
+            balance = maximumStake;
+        }
         
         // Set information for this staker.
         allStakers.push(msg.sender);
@@ -644,8 +647,8 @@ contract Prestaking is Ownable {
      */
     function startWithdrawReward() external onlyStaker {
         Staker storage staker = stakersMap[msg.sender];
-        require(staker.cooldownTime == 0);
-        require(staker.endTime == 0);
+        require(staker.cooldownTime == 0, "A withdrawal call has already been triggered");
+        require(staker.endTime == 0, "Stake already withdrawn");
         distributeRewards();
         
         staker.cooldownTime = block.timestamp;
@@ -657,7 +660,7 @@ contract Prestaking is Ownable {
      */
     function withdrawReward() external onlyStaker {
         Staker storage staker = stakersMap[msg.sender];
-        require(staker.cooldownTime != 0);
+        require(staker.cooldownTime != 0, "A withdrawal call has already been triggered");
         distributeRewards();
 
         if (block.timestamp - staker.cooldownTime >= 7 days) {
@@ -673,8 +676,8 @@ contract Prestaking is Ownable {
      */
     function startWithdrawStake() external onlyStaker {
         Staker storage staker = stakersMap[msg.sender];
-        require(staker.endTime == 0);
-        require(staker.cooldownTime == 0);
+        require(staker.endTime == 0, "Stake already withdrawn");
+        require(staker.cooldownTime == 0, "A withdrawal call has been triggered - please wait for it to complete before withdrawing your stake");
         
         // We distribute the rewards first, so that the withdrawing staker
         // receives all of their allocated rewards, before setting an `endTime`.
@@ -688,7 +691,7 @@ contract Prestaking is Ownable {
      */
     function withdrawStake() external onlyStaker {
         Staker storage staker = stakersMap[msg.sender];
-        require(staker.endTime != 0);
+        require(staker.endTime != 0, "Stake already withdrawn");
         distributeRewards();
         
         if (block.timestamp - staker.endTime >= 7 days) {
