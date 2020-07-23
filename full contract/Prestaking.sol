@@ -647,6 +647,7 @@ contract Prestaking is Ownable {
      */
     function startWithdrawReward() external onlyStaker {
         Staker storage staker = stakersMap[msg.sender];
+        require(staker.startTime + 1 days <= block.timestamp, "Please wait at least one day after staking to withdraw rewards");
         require(staker.cooldownTime == 0, "A withdrawal call has already been triggered");
         require(staker.endTime == 0, "Stake already withdrawn");
         distributeRewards();
@@ -676,6 +677,7 @@ contract Prestaking is Ownable {
      */
     function startWithdrawStake() external onlyStaker {
         Staker storage staker = stakersMap[msg.sender];
+        require(staker.startTime + 30 days <= block.timestamp, "Stakes can only be withdrawn 30 days after initial lock up");
         require(staker.endTime == 0, "Stake already withdrawn");
         require(staker.cooldownTime == 0, "A withdrawal call has been triggered - please wait for it to complete before withdrawing your stake");
         
@@ -691,7 +693,7 @@ contract Prestaking is Ownable {
      */
     function withdrawStake() external onlyStaker {
         Staker storage staker = stakersMap[msg.sender];
-        require(staker.endTime != 0, "Stake already withdrawn");
+        require(staker.endTime != 0, "Stake withdrawal call was not yet initiated");
         distributeRewards();
         
         if (block.timestamp - staker.endTime >= 7 days) {
@@ -722,8 +724,8 @@ contract Prestaking is Ownable {
             for (uint i = 0; i < allStakers.length; i++) {
                 Staker storage staker = stakersMap[allStakers[i]];
                 
-                // Stakers can only start receiving rewards after 30 days of lockup.
-                if (lastUpdated - staker.startTime < 30 days) {
+                // Stakers can only start receiving rewards after 1 day of lockup.
+                if (lastUpdated - staker.startTime < 1 days) {
                     continue;
                 }
                 
