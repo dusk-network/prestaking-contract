@@ -570,13 +570,6 @@ contract Prestaking is Ownable {
     }
     
     /**
-     * @notice Ensure nobody can call this contract without calldata.
-     */
-    fallback() external payable {
-        revert();
-    }
-    
-    /**
      * @notice Ensure nobody can send Ether to this contract, as it is not supposed to have any.
      */
     receive() external payable {
