@@ -756,9 +756,12 @@ contract Prestaking is Ownable {
     function returnStake(address _staker) external onlyOwner {
         Staker storage staker = stakersMap[_staker];
         require(staker.amount > 0, "This person is not staking");
+
+        // If this user has a pending reward, add it to the accumulated reward before
+        // paying him out.
+        staker.accumulatedReward = staker.accumulatedReward.add(staker.pendingReward);
         removeUser(staker);
     }
-
 
     /**
      * @notice Update the staking pool, if any new entrants are found which have passed
@@ -776,6 +779,11 @@ contract Prestaking is Ownable {
         }
     }
 
+    /**
+     * @notice Remove a user from the staking pool. This ensures proper deletion from
+     * the stakers map and the stakers array, and ensures that all DUSK is returned to
+     * the rightful owner.
+     */
     function removeUser(Staker storage staker) internal {
         uint256 balance = staker.amount.add(staker.accumulatedReward);
         delete stakersMap[msg.sender];
