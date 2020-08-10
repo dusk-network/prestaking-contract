@@ -38,10 +38,17 @@ contract Prestaking is Ownable {
     uint256 public stakingPool;
     
     uint private lastUpdated;
+
+    bool public active;
     
     modifier onlyStaker() {
         Staker storage staker = stakersMap[msg.sender];
         require(staker.startTime.add(1 days) <= block.timestamp && staker.startTime != 0, "No stake is active for sender address");
+        _;
+    }
+
+    modifier onlyActive() {
+        require(active);
         _;
     }
     
@@ -51,6 +58,7 @@ contract Prestaking is Ownable {
         maximumStake = max;
         dailyReward = reward;
         lastUpdated = timestamp;
+        active = true;
     }
     
     /**
@@ -91,12 +99,26 @@ contract Prestaking is Ownable {
     function updateDailyReward(uint256 amount) external onlyOwner {
         dailyReward = amount;
     }
+
+    /**
+     * @notice Update the reward distribution.
+     */
+    function updateDistribution() external onlyActive {
+        distributeRewards();
+    }
+
+    /**
+     * @notice Toggle the contract between active and inactive
+     */
+    function toggleActive() external onlyOwner {
+        active = !active;
+    }
     
     /**
      * @notice Lock up a given amount of DUSK in the pre-staking contract.
      * @dev A user is required to approve the amount of DUSK prior to calling this function.
      */
-    function stake() external {
+    function stake() external onlyActive {
         // Ensure this staker does not exist yet.
         Staker storage staker = stakersMap[msg.sender];
         require(staker.amount == 0, "Address already known");
@@ -122,7 +144,7 @@ contract Prestaking is Ownable {
     /**
      * @notice Start the cooldown period for withdrawing a reward.
      */
-    function startWithdrawReward() external onlyStaker {
+    function startWithdrawReward() external onlyStaker onlyActive {
         Staker storage staker = stakersMap[msg.sender];
         require(staker.cooldownTime == 0, "A withdrawal call has already been triggered");
         require(staker.endTime == 0, "Stake already withdrawn");
@@ -157,9 +179,12 @@ contract Prestaking is Ownable {
         require(staker.endTime == 0, "Stake already withdrawn");
         require(staker.cooldownTime == 0, "A withdrawal call has been triggered - please wait for it to complete before withdrawing your stake");
         
-        // We distribute the rewards first, so that the withdrawing staker
-        // receives all of their allocated rewards, before setting an `endTime`.
-        distributeRewards();
+        if (active) {
+            // We distribute the rewards first, so that the withdrawing staker
+            // receives all of their allocated rewards, before setting an `endTime`.
+            distributeRewards();
+        }
+
         staker.endTime = block.timestamp;
         stakingPool = stakingPool.sub(staker.amount);
     }
@@ -172,18 +197,7 @@ contract Prestaking is Ownable {
         require(staker.endTime != 0, "Stake withdrawal call was not yet initiated");
         
         if (block.timestamp.sub(staker.endTime) >= 7 days) {
-            uint256 balance = staker.amount.add(staker.accumulatedReward);
-            delete stakersMap[msg.sender];
-            
-            // Delete staker from the array.
-            for (uint i = 0; i < allStakers.length; i++) {
-                if (allStakers[i] == msg.sender) {
-                    allStakers[i] = allStakers[allStakers.length-1];
-                    delete allStakers[allStakers.length-1];
-                }
-            }
-
-            _token.safeTransfer(msg.sender, balance);
+            removeUser(staker);
         }
     }
     
@@ -217,6 +231,20 @@ contract Prestaking is Ownable {
     }
 
     /**
+     * @notice Can be used by the contract owner to return a user's stake back to them,
+     * without need for going through the withdrawal period. This should only really be used
+     * at the end of the campaign, if a user does not manually withdraw their stake.
+     * @dev This function only works on single addresses, in order to avoid potential
+     * deadlocks caused by high gas requirements.
+     */
+    function returnStake(address _staker) external onlyOwner {
+        Staker storage staker = stakersMap[_staker];
+        require(staker.amount > 0, "This person is not staking");
+        removeUser(staker);
+    }
+
+
+    /**
      * @notice Update the staking pool, if any new entrants are found which have passed
      * the initial waiting period.
      */
@@ -230,5 +258,24 @@ contract Prestaking is Ownable {
                 stakingPool = stakingPool.add(staker.amount);
             }
         }
+    }
+
+    /**
+     * @notice Remove a user from the staking pool. This ensures proper deletion from
+     * the stakers map and the stakers array, and ensures that all DUSK is returned to
+     * the rightful owner.
+     */
+    function removeUser(Staker storage staker) internal {
+        uint256 balance = staker.amount.add(staker.accumulatedReward);
+        delete stakersMap[msg.sender];
+            
+        // Delete staker from the array.
+        for (uint i = 0; i < allStakers.length; i++) {
+            if (allStakers[i] == msg.sender) {
+                allStakers[i] = allStakers[allStakers.length-1];
+                delete allStakers[allStakers.length-1];
+            }
+        }
+        _token.safeTransfer(msg.sender, balance);
     }
 }
