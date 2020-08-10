@@ -40,6 +40,8 @@ contract('Prestaking', async (accounts) => {
 		await tokenInstance.transfer(accounts[1], '250000', { from: accounts[0], gas: '1000000' });
 		await tokenInstance.transfer(accounts[2], '500000', { from: accounts[0], gas: '1000000' });
 		await tokenInstance.transfer(accounts[3], '100000', { from: accounts[0], gas: '1000000' });
+		await tokenInstance.transfer(accounts[4], '250000', { from: accounts[0], gas: '1000000' });
+		await tokenInstance.transfer(accounts[5], '250000', { from: accounts[0], gas: '1000000' });
 	});
 	
 
@@ -194,6 +196,18 @@ contract('Prestaking', async (accounts) => {
 			await advanceTime(7*24*60*60);
 		});
 
+		it('should allow anybody to trigger reward distribution', async () => {
+			let staker = await prestakingInstance.stakersMap.call(accounts[1], { from: accounts[1] });
+			let balance = staker.amount.toNumber() + staker.accumulatedReward.toNumber() + staker.pendingReward.toNumber();
+
+			await prestakingInstance.updateDistribution({ from: accounts[9], gas: '1000000' });
+
+			let newStaker = await prestakingInstance.stakersMap.call(accounts[1], { from: accounts[1] });
+			let newBalance = newStaker.amount.toNumber() + newStaker.accumulatedReward.toNumber() + newStaker.pendingReward.toNumber();
+
+			assert.isAbove(newBalance, balance);
+		});
+
 		it('should allow a staker to start their withdrawal cooldown, after waiting for the initial period', async () => {
 			await prestakingInstance.startWithdrawReward({ from: accounts[1], gas: '1000000' });
 
@@ -315,6 +329,87 @@ contract('Prestaking', async (accounts) => {
 
 			try {
 				await prestakingInstance.startWithdrawStake({ from: accounts[2], gas: '1000000' });
+				assert(false);
+			} catch(e) {
+				assert(true);
+			}
+		});
+	});
+
+	describe('activity toggle', () => {
+		before(async () => {
+			await tokenInstance.approve(prestakingInstance.address, 250000, { from: accounts[5], gas: '1000000' });
+			await prestakingInstance.stake({ from: accounts[5], gas: '1000000' });
+		});
+
+		it('should not allow a non-owner to toggle the contract activity status', async () => {
+			try {
+				await prestakingInstance.toggleActive({ from: accounts[9], gas: '1000000' });
+				assert(false);
+			} catch(e) {
+				assert(true);
+			}
+		});
+
+		it('should allow the owner to toggle the contract activity status', async () => {
+			await prestakingInstance.toggleActive({ from: accounts[0], gas: '1000000' });
+		});
+
+		it('should not allow anyone to stake, while the contract is inactive', async () => {
+			try {
+				await tokenInstance.approve(prestakingInstance.address, 250000, { from: accounts[4], gas: '1000000' });
+				await prestakingInstance.stake({ from: accounts[4], gas: '1000000' });
+				assert(false);
+			} catch(e) {
+				assert(true);
+			}
+		});
+
+		it('should not allow withdrawing rewards when the contract is inactive', async () => {
+			try {
+				await prestakingInstance.startWithdrawReward({ from: accounts[5], gas: '1000000' });
+				assert(false);
+			} catch(e) {
+				assert(true);
+			}
+		});
+
+		it('should not distribute more rewards if the contract is inactive', async () => {
+			let staker = await prestakingInstance.stakersMap.call(accounts[5], { from: accounts[5] });
+			let balance = staker.amount.toNumber() + staker.accumulatedReward.toNumber() + staker.pendingReward.toNumber();
+
+			// Advance time 31 days (because of the initial lock-up)
+			advanceTime(31*24*60*60);
+			await prestakingInstance.startWithdrawStake({ from: accounts[5], gas: '1000000' });
+			let newStaker = await prestakingInstance.stakersMap.call(accounts[5], { from: accounts[5] });
+			let newBalance = newStaker.amount.toNumber() + newStaker.accumulatedReward.toNumber() + newStaker.pendingReward.toNumber();
+
+			assert.strictEqual(balance, newBalance);
+		});
+	});
+
+	describe('owner functionality', () => {
+		it('should not allow a non-owner to send a stake back', async () => {
+			try {
+				await prestakingInstance.returnStake(accounts[2], { from: accounts[2], gas: '1000000' });
+				assert(false);
+			} catch(e) {
+				assert(true);
+			}
+		});
+
+		it('should allow the owner to send a stake back', async () => {
+			let staker = await prestakingInstance.stakersMap.call(accounts[2], { from: accounts[2] });
+			let balance = staker.amount.toNumber() + staker.accumulatedReward.toNumber() + staker.pendingReward.toNumber();
+			await prestakingInstance.returnStake(accounts[2], { from: accounts[0], gas: '1000000' });
+
+			let tokenBalance = await tokenInstance.balanceOf.call(accounts[2], { from: accounts[2] });
+			assert.strictEqual(balance + 250000, tokenBalance.toNumber());
+		});
+
+		it('should not allow to return the stake of a user that has not staked', async () => {
+			try {
+				await prestakingInstance.returnStake(accounts[9], { from: accounts[0], gas: '1000000' });
 				assert(false);
 			} catch(e) {
 				assert(true);
