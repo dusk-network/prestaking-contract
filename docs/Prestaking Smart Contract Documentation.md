@@ -92,16 +92,16 @@ This variable tells the contract when the last rewards distribution took place, 
 The constructor is used to initialise a couple of the aforementioned global [variables](#variables).
 
 ```
-constructor(IERC20 token, uint256 min, uint256 max, uint256 reward) public {
+constructor(IERC20 token, uint256 min, uint256 max, uint256 reward, uint timestamp) public {
     _token = token;
     minimumStake = min;
     maximumStake = max;
     dailyReward = reward;
-    lastUpdated = block.timestamp;
+    lastUpdated = timestamp;
 }
 ```
 
-Besides setting the token contract address, the minimum and maximum stake, and the daily reward, it also sets the `lastUpdated` variable to the current time. This ensures that the contract will only start calculating rewards from contract creation, and not from the year 1970.
+Besides setting the token contract address, the minimum and maximum stake, and the daily reward, it also sets the `lastUpdated` variable to the given time. This ensures that the contract will only start calculating rewards from a predetermined point in time, and not from the year 1970.
 
 ### Modifiers
 
