@@ -619,7 +619,7 @@ contract Prestaking is Ownable {
     /**
      * @notice Update the reward distribution.
      */
-    function updateDistribution() external onlyActive {
+    function updateDistribution() external {
         distributeRewards();
     }
 
@@ -694,12 +694,10 @@ contract Prestaking is Ownable {
         require(staker.startTime.add(30 days) <= block.timestamp, "Stakes can only be withdrawn 30 days after initial lock up");
         require(staker.endTime == 0, "Stake already withdrawn");
         require(staker.cooldownTime == 0, "A withdrawal call has been triggered - please wait for it to complete before withdrawing your stake");
-        
-        if (active) {
-            // We distribute the rewards first, so that the withdrawing staker
-            // receives all of their allocated rewards, before setting an `endTime`.
-            distributeRewards();
-        }
+
+        // We distribute the rewards first, so that the withdrawing staker
+        // receives all of their allocated rewards, before setting an `endTime`.
+        distributeRewards();
 
         staker.endTime = block.timestamp;
         stakingPool = stakingPool.sub(staker.amount);
@@ -720,6 +718,8 @@ contract Prestaking is Ownable {
     /**
      * @notice Update the reward allocation, step-by-step.
      * @dev This function can update the staker's active status, and the staking pool size.
+     * Rewards will not be distributed if the contract is inactive - only the lastUpdated 
+     * variable will be changed.
      */
     function distributeRewards() internal {
         while ((block.timestamp.sub(lastUpdated)) > 1 days) {
@@ -728,6 +728,10 @@ contract Prestaking is Ownable {
             // Update the staking pool for this day
             updateStakingPool();
             
+            if (!active) {
+                continue;
+            }
+
             // Allocate rewards for this day.
             for (uint i = 0; i < allStakers.length; i++) {
                 Staker storage staker = stakersMap[allStakers[i]];
