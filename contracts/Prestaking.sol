@@ -224,7 +224,7 @@ contract Prestaking is Ownable {
                 
                 // Calculate percentage of reward to be received, and allocate it.
                 // Reward is calculated down to a precision of two decimals.
-                uint256 reward = staker.amount.mul(10000).div(stakingPool).mul(dailyReward).div(10000);
+                uint256 reward = staker.amount.mul(10000).mul(dailyReward).div(stakingPool).div(10000);
                 staker.accumulatedReward = staker.accumulatedReward.add(reward);
             }
         }

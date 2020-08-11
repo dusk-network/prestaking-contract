@@ -713,7 +713,7 @@ contract Prestaking is Ownable {
         require(staker.endTime != 0, "Stake withdrawal call was not yet initiated");
         
         if (block.timestamp.sub(staker.endTime) >= 7 days) {
-            removeUser(staker);
+            removeUser(staker, msg.sender);
         }
     }
     
@@ -740,7 +740,7 @@ contract Prestaking is Ownable {
                 
                 // Calculate percentage of reward to be received, and allocate it.
                 // Reward is calculated down to a precision of two decimals.
-                uint256 reward = staker.amount.mul(10000).div(stakingPool).mul(dailyReward).div(10000);
+                uint256 reward = staker.amount.mul(10000).mul(dailyReward).div(stakingPool).div(10000);
                 staker.accumulatedReward = staker.accumulatedReward.add(reward);
             }
         }
@@ -760,7 +760,7 @@ contract Prestaking is Ownable {
         // If this user has a pending reward, add it to the accumulated reward before
         // paying him out.
         staker.accumulatedReward = staker.accumulatedReward.add(staker.pendingReward);
-        removeUser(staker);
+        removeUser(staker, _staker);
     }
 
     /**
@@ -783,18 +783,20 @@ contract Prestaking is Ownable {
      * @notice Remove a user from the staking pool. This ensures proper deletion from
      * the stakers map and the stakers array, and ensures that all DUSK is returned to
      * the rightful owner.
+     * @param staker The information of the staker in question
+     * @param sender The address of the staker in question
      */
-    function removeUser(Staker storage staker) internal {
+    function removeUser(Staker storage staker, address sender) internal {
         uint256 balance = staker.amount.add(staker.accumulatedReward);
-        delete stakersMap[msg.sender];
+        delete stakersMap[sender];
             
         // Delete staker from the array.
         for (uint i = 0; i < allStakers.length; i++) {
-            if (allStakers[i] == msg.sender) {
+            if (allStakers[i] == sender) {
                 allStakers[i] = allStakers[allStakers.length-1];
                 delete allStakers[allStakers.length-1];
             }
         }
-        _token.safeTransfer(msg.sender, balance);
+        _token.safeTransfer(sender, balance);
     }
 }
