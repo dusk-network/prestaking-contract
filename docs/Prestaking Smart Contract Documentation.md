@@ -79,13 +79,15 @@ uint256 public stakingPool;
 
 `stakingPool` will hold the total amount of DUSK staked at any given time.
 
-And, at the very end, we also declare a variable to hold a timestamp.
+And, at the very end, we also declare a variable to hold a timestamp, and a variable to denote the status of the contract.
 
 ```
 uint private lastUpdated;
+
+bool public active;
 ```
 
-This variable tells the contract when the last rewards distribution took place, and serves to avoid duplicate allocation of DUSK.
+The first variable tells the contract when the last rewards distribution took place, and serves to avoid duplicate allocation of DUSK. The last variable will determine whether or not rewards will be distributed.
 
 ### Constructor
 
@@ -98,14 +100,15 @@ constructor(IERC20 token, uint256 min, uint256 max, uint256 reward, uint timesta
     maximumStake = max;
     dailyReward = reward;
     lastUpdated = timestamp;
+    active = true;
 }
 ```
 
-Besides setting the token contract address, the minimum and maximum stake, and the daily reward, it also sets the `lastUpdated` variable to the given time. This ensures that the contract will only start calculating rewards from a predetermined point in time, and not from the year 1970.
+Besides setting the token contract address, the minimum and maximum stake, and the daily reward, it also sets the `lastUpdated` variable to the given time. This ensures that the contract will only start calculating rewards from a predetermined point in time, and not from the year 1970. The `active` boolean is also set to `true`, to allow for reward distribution right away.
 
 ### Modifiers
 
-Besides the inherited `onlyOwner`, the contract itself only has one modifier, `onlyStaker`.
+Besides the inherited `onlyOwner`, the contract itself has two modifiers. The first one is `onlyStaker`.
 
 ```
 modifier onlyStaker() {
@@ -116,6 +119,17 @@ modifier onlyStaker() {
 ```
 
 This modifier ensures that the caller is indeed an active staker, and is used to guard the [staker actions](#staker-actions).
+
+The second one is `onlyActive`.
+
+```
+modifier onlyActive() {
+    require(active);
+    _;
+}
+```
+
+This modifier restricts access to certain functions which should not be called when the contract is set to inactive.
 
 ### Functionality
 
@@ -134,7 +148,7 @@ For a user to participate in the pre-staking campaign, he will have to call the 
 Once approved, the user can then call the `stake` function.
 
 ```
-function stake() external {
+function stake() external onlyActive {
     // Ensure this staker does not exist yet.
     Staker storage staker = stakersMap[msg.sender];
     require(staker.amount == 0, "Address already known");
@@ -167,8 +181,13 @@ The reward distribution happens as follows.
 function distributeRewards() internal {
     while ((block.timestamp.sub(lastUpdated)) > 1 days) {
         lastUpdated = lastUpdated.add(1 days);
+
         // Update the staking pool for this day
         updateStakingPool();
+
+        if (!active) {
+            continue;
+        }
         
         // Allocate rewards for this day.
         for (uint i = 0; i < allStakers.length; i++) {
@@ -182,7 +201,7 @@ function distributeRewards() internal {
             
             // Calculate percentage of reward to be received, and allocate it.
             // Reward is calculated down to a precision of two decimals.
-            uint256 reward = staker.amount.mul(10000).div(stakingPool).mul(dailyReward).div(10000);
+            uint256 reward = staker.amount.mul(10000).mul(dailyReward).div(stakingPool).div(10000);
             staker.accumulatedReward = staker.accumulatedReward.add(reward);
         }
     }
@@ -223,7 +242,7 @@ Once the stake has been accepted, and enough time has passed, the staker starts 
 To withdraw the accumulated rewards, the staker should first call `startWithdrawReward`.
 
 ```
-function startWithdrawReward() external onlyStaker {
+function startWithdrawReward() external onlyStaker onlyActive {
     Staker storage staker = stakersMap[msg.sender];
     require(staker.cooldownTime == 0, "A withdrawal call has already been triggered");
     require(staker.endTime == 0, "Stake already withdrawn");
@@ -235,7 +254,7 @@ function startWithdrawReward() external onlyStaker {
 }
 ```
 
-A number of checks are initially performed. The contract ensures the caller is actually an active staker, it makes sure no cooldown is currently running, and it ensures that the staker has not already requested to withdraw their stake. In any of these cases, the function should revert.
+A number of checks are initially performed. The contract ensures the caller is actually an active staker, that the contract is active, that no cooldown is currently running, and it ensures that the staker has not already requested to withdraw their stake. In any of these cases, the function should revert.
 
 Then, [rewards are distributed](#reward-distribution), to ensure the right amount of DUSK is set to pending for withdrawal.
 
@@ -307,6 +326,18 @@ function withdrawStake() external onlyStaker {
 
 After making sure that the caller is an active staker, and has previously signaled to withdraw their stake, the cooldown period is then evaluated. If 7 days have passed, the total amount of DUSK to release is then calculated as `amount + accumulatedReward`. The stakers records are then deleted, and their address removed from the `allStakers` list, before releasing the tokens back to the staker. He is now officially no longer staking.
 
+#### Updating distribution
+
+The reward distribution can be updated manually by calling the `updateDistribution` function.
+
+```
+function updateDistribution() external {
+    distributeRewards();
+}
+```
+
+This function simply runs the internal `distributeRewards` call, and can be called at any point in time, by anyone. This allows users to update their reward information without needing to start a withdrawal action.
+
 #### Owner actions
 
 The owner gets the option to modify the minimum stake, the maximum stake, and the daily reward, at any point.
@@ -325,6 +356,28 @@ function updateMaximumStake(uint256 amount) external onlyOwner {
 function updateDailyReward(uint256 amount) external onlyOwner {
     dailyReward = amount;
 }
+
+function toggleActive() external onlyOwner {
+    active = !active;
+}
 ```
 
 As you can see, all functions are guarded with the `onlyOwner` modifier. Additionally, the stake update functions include sanity checks, to ensure the minimum and maximum don't cross each other.
+
+##### Returning stakes
+
+As a contingency, the owner can return stakes to the users by calling the `returnStake` function.
+
+```
+function returnStake(address _staker) external onlyOwner {
+    Staker storage staker = stakersMap[_staker];
+    require(staker.amount > 0, "This person is not staking");
+
+    // If this user has a pending reward, add it to the accumulated reward before
+    // paying him out.
+    staker.accumulatedReward = staker.accumulatedReward.add(staker.pendingReward);
+    removeUser(staker, _staker);
+    }
+```
+
+Which essentially instantly returns the accumulated reward and the stake to the user with the given address. This function can be used in the incredibly unlikely case of contract failure, to secure the users assets, as well as returning users assets after the campaign has completed, in case they have forgotten to withdraw their DUSK.
