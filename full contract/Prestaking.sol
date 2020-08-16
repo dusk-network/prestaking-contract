@@ -552,6 +552,7 @@ contract Prestaking is Ownable {
     uint256 public maximumStake;
     uint256 public dailyReward;
     uint256 public stakingPool;
+    uint public cap;
     
     uint private lastUpdated;
 
@@ -568,12 +569,13 @@ contract Prestaking is Ownable {
         _;
     }
     
-    constructor(IERC20 token, uint256 min, uint256 max, uint256 reward, uint timestamp) public {
+    constructor(IERC20 token, uint256 min, uint256 max, uint256 reward, uint userCap, uint timestamp) public {
         _token = token;
         minimumStake = min;
         maximumStake = max;
         dailyReward = reward;
         lastUpdated = timestamp;
+        cap = userCap;
         active = true;
     }
     
@@ -629,12 +631,29 @@ contract Prestaking is Ownable {
     function toggleActive() external onlyOwner {
         active = !active;
     }
+
+    /**
+     * @notice Adjust the amount of users that can be staking at the same time.
+     */
+    function adjustCap(uint newCap) external onlyOwner {
+        cap = newCap;
+    }
+
+    /**
+     * @notice Retrieve the amount of stakers active on this contract.
+     */
+    function stakersAmount() external view returns (uint) {
+        return allStakers.length;
+    }
     
     /**
      * @notice Lock up a given amount of DUSK in the pre-staking contract.
      * @dev A user is required to approve the amount of DUSK prior to calling this function.
      */
     function stake() external onlyActive {
+        // Enforce cap.
+        require(allStakers.length < cap, "Too many stakers active");
+
         // Ensure this staker does not exist yet.
         Staker storage staker = stakersMap[msg.sender];
         require(staker.amount == 0, "Address already known");
@@ -772,15 +791,18 @@ contract Prestaking is Ownable {
      * the initial waiting period.
      */
     function updateStakingPool() internal {
+        uint256 counter = 0;
         for (uint i = 0; i < allStakers.length; i++) {
             Staker storage staker = stakersMap[allStakers[i]];
 
             // If this staker has just become active, update the staking pool size.
             if (!staker.active && lastUpdated.sub(staker.startTime) >= 1 days) {
                 staker.active = true;
-                stakingPool = stakingPool.add(staker.amount);
+                counter = counter.add(staker.amount);
             }
         }
+        
+        stakingPool = stakingPool.add(counter);
     }
 
     /**
@@ -793,7 +815,7 @@ contract Prestaking is Ownable {
     function removeUser(Staker storage staker, address sender) internal {
         uint256 balance = staker.amount.add(staker.accumulatedReward);
         delete stakersMap[sender];
-            
+        
         // Delete staker from the array.
         for (uint i = 0; i < allStakers.length; i++) {
             if (allStakers[i] == sender) {

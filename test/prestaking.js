@@ -302,6 +302,9 @@ contract('Prestaking', async (accounts) => {
 	describe('fifth timetravel', () => {
 		before(async () => {
 			await advanceTime(8*24*60*60);
+			await prestakingInstance.updateDistribution({ from: accounts[0], gas: '10000000' });
+			await tokenInstance.approve(prestakingInstance.address, 250000, { from: accounts[5], gas: '1000000' });
+			await prestakingInstance.stake({ from: accounts[5], gas: '1000000' });
 		});
 
 		it('should allow a staker to withdraw his stake after the cooldown', async () => {
@@ -334,14 +337,32 @@ contract('Prestaking', async (accounts) => {
 				assert(true);
 			}
 		});
+
+		it('should not allow to exceed the cap', async () => {
+			for (let i = 0; i < 97; i++) {
+				let account = await web3.eth.personal.newAccount('1234');
+				await web3.eth.personal.unlockAccount(account, '1234', 100);
+				await web3.eth.sendTransaction({ from: accounts[9], to: account, value: 2000000 });
+				await tokenInstance.transfer(account, 250000, { from: accounts[0], gas: '1000000' });
+				await tokenInstance.approve(prestakingInstance.address, 250000, { from: account, gas: '1000000' });
+				await prestakingInstance.stake({ from: account, gas: '1000000' });
+			}
+
+			try {
+				let account = await web3.eth.personal.newAccount('1234');
+				await web3.eth.personal.unlockAccount(account, '1234', 100);
+				await web3.eth.sendTransaction({ from: accounts[9], to: account, value: 2000000 });
+				await tokenInstance.transfer(account, 250000, { from: accounts[0], gas: '1000000' });
+				await tokenInstance.approve(prestakingInstance.address, 250000, { from: account, gas: '1000000' });
+				await prestakingInstance.stake({ from: account, gas: '1000000' });
+				assert(false);
+			} catch(e) {
+				assert(true);
+			}
+		});
 	});
 
 	describe('activity toggle', () => {
-		before(async () => {
-			await tokenInstance.approve(prestakingInstance.address, 250000, { from: accounts[5], gas: '1000000' });
-			await prestakingInstance.stake({ from: accounts[5], gas: '1000000' });
-		});
-
 		it('should not allow a non-owner to toggle the contract activity status', async () => {
 			try {
 				await prestakingInstance.toggleActive({ from: accounts[9], gas: '1000000' });
@@ -379,8 +400,12 @@ contract('Prestaking', async (accounts) => {
 			let balance = staker.amount.toNumber() + staker.accumulatedReward.toNumber() + staker.pendingReward.toNumber();
 
 			// Advance time 31 days (because of the initial lock-up)
-			advanceTime(31*24*60*60);
-			await prestakingInstance.startWithdrawStake({ from: accounts[5], gas: '1000000' });
+			for (let i = 0; i < 31; i++) {
+				advanceTime(24*60*60);
+				await prestakingInstance.updateDistribution({ from: accounts[0], gas: '10000000' });
+			}
+
+			await prestakingInstance.startWithdrawStake({ from: accounts[5], gas: '10000000' });
 			let newStaker = await prestakingInstance.stakersMap.call(accounts[5], { from: accounts[5] });
 			let newBalance = newStaker.amount.toNumber() + newStaker.accumulatedReward.toNumber() + newStaker.pendingReward.toNumber();
 
@@ -401,7 +426,7 @@ contract('Prestaking', async (accounts) => {
 		it('should allow the owner to send a stake back', async () => {
 			let staker = await prestakingInstance.stakersMap.call(accounts[2], { from: accounts[2] });
 			let balance = staker.amount.toNumber() + staker.accumulatedReward.toNumber() + staker.pendingReward.toNumber();
-			await prestakingInstance.returnStake(accounts[2], { from: accounts[0], gas: '1000000' });
+			await prestakingInstance.returnStake(accounts[2], { from: accounts[0], gas: '10000000' });
 
 			let tokenBalance = await tokenInstance.balanceOf.call(accounts[2], { from: accounts[2] });
 			assert.strictEqual(balance + 250000, tokenBalance.toNumber());
@@ -414,6 +439,21 @@ contract('Prestaking', async (accounts) => {
 			} catch(e) {
 				assert(true);
 			}
+		});
+
+		it('should not allow a non-owner to change the cap', async () => {
+			try {
+				await prestakingInstance.adjustCap(150, { from: accounts[9], gas: '1000000' });
+				assert(false);
+			} catch(e) {
+				assert(true);
+			}
+		});
+
+		it('should allow the owner to change the cap', async () => {
+			await prestakingInstance.adjustCap(150, { from: accounts[0], gas: '1000000' });
+			let cap = await prestakingInstance.cap.call({ from: accounts[0] });
+			assert.strictEqual(cap.toNumber(), 150);
 		});
 	});
 
@@ -477,6 +517,11 @@ contract('Prestaking', async (accounts) => {
 	});
 
 	describe("misc", () => {
+		it('should allow anybody to query the amount of active stakers', async () => {
+			let amount = await prestakingInstance.stakersAmount.call({ from: accounts[9] });
+			assert.strictEqual(amount.toNumber(), 100);
+		});
+		
 		it('should revert when ether is sent', async () => {
 			try {
 				await web3.sendTransaction({ to: prestakingInstance.address, from: accounts[0], value: web3.toWei("0.5", "ether") });
