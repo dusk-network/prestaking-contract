@@ -69,6 +69,7 @@ uint256 public minimumStake;
 uint256 public maximumStake;
 uint256 public dailyReward;
 uint256 public stakingPool;
+uint public cap;
 ```
 
 `stakersMap` is a mapping of stakers addresses, to their information, stored in a `Staker` struct.
@@ -78,6 +79,8 @@ uint256 public stakingPool;
 `minimumStake`, `maximumStake` and `dailyReward` should be self-explanatory.
 
 `stakingPool` will hold the total amount of DUSK staked at any given time.
+
+`cap` will determine the amount of people allowed to be active stakers at the same time.
 
 And, at the very end, we also declare a variable to hold a timestamp, and a variable to denote the status of the contract.
 
@@ -94,12 +97,13 @@ The first variable tells the contract when the last rewards distribution took pl
 The constructor is used to initialise a couple of the aforementioned global [variables](#variables).
 
 ```
-constructor(IERC20 token, uint256 min, uint256 max, uint256 reward, uint timestamp) public {
+constructor(IERC20 token, uint256 min, uint256 max, uint256 reward, uint userCap, uint timestamp) public {
     _token = token;
     minimumStake = min;
     maximumStake = max;
     dailyReward = reward;
     lastUpdated = timestamp;
+    cap = userCap;
     active = true;
 }
 ```
@@ -149,6 +153,9 @@ Once approved, the user can then call the `stake` function.
 
 ```
 function stake() external onlyActive {
+    // Enforce cap.
+    require(allStakers.length < cap, "Too many stakers active");
+    
     // Ensure this staker does not exist yet.
     Staker storage staker = stakersMap[msg.sender];
     require(staker.amount == 0, "Address already known");
@@ -171,7 +178,7 @@ function stake() external onlyActive {
 }
 ```
 
-First off, the contract ensures this person is not already known. Then, it will inquire the DUSK token contract for its allowance, given by the sender. If this passes all checks, the sender is added to the stakers list, his information is updated, and then the tokens are transferred from the sender to the contract. The user is now officially staking.
+First off, the contract ensures that the cap will not be exceeded, and that this person is not already known. Then, it will inquire the DUSK token contract for its allowance, given by the sender. If this passes all checks, the sender is added to the stakers list, his information is updated, and then the tokens are transferred from the sender to the contract. The user is now officially staking.
 
 #### Reward distribution
 
@@ -216,14 +223,17 @@ It will then make sure the staking pool is up to date. It does so through the `u
 
 ```
 function updateStakingPool() internal {
+    uint256 counter = 0;
     for (uint i = 0; i < allStakers.length; i++) {
         Staker storage staker = stakersMap[allStakers[i]];
         // If this staker has just become active, update the staking pool size.
         if (!staker.active && lastUpdated.sub(staker.startTime) >= 1 days) {
             staker.active = true;
-            stakingPool = stakingPool.add(staker.amount);
+            counter = counter.add(staker.amount);
         }
     }
+
+    stakingPool = stakingPool.add(counter);
 }
 ```
 
@@ -338,6 +348,16 @@ function updateDistribution() external {
 
 This function simply runs the internal `distributeRewards` call, and can be called at any point in time, by anyone. This allows users to update their reward information without needing to start a withdrawal action.
 
+#### Contract information
+
+To retrieve the amount of stakers currently active on the contract, simply call the `stakersAmount` function.
+
+```
+function stakersAmount() external view returns (uint) {
+    return allStakers.length;
+}
+```
+
 #### Owner actions
 
 The owner gets the option to modify the minimum stake, the maximum stake, and the daily reward, at any point.
@@ -359,6 +379,10 @@ function updateDailyReward(uint256 amount) external onlyOwner {
 
 function toggleActive() external onlyOwner {
     active = !active;
+}
+
+function adjustCap(uint newCap) external onlyOwner {
+    cap = newCap;
 }
 ```
 
